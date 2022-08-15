@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import { IERC721 } from "./ERC721.sol";
 import { WETH } from "../src/WETH.sol";
 
-contract NFTSell {
+contract MarketItem {
     event NewBid (address indexed bidder, uint indexed amount);
     event Sold (address buyer, SellType, uint amount);
 
@@ -36,17 +36,17 @@ contract NFTSell {
     bool isSold;
 
     constructor(
-        address _nft,
+        address _nftAddress,
         uint _nftId,
+        address _seller,
         uint _instantBuyPrice,
         WETH _weth
     ) {
-        nft = IERC721(_nft);
+        nft = IERC721(_nftAddress);
         nftId = _nftId;
-        seller = payable(msg.sender);
+        seller = payable(_seller);
         instantBuyPrice = _instantBuyPrice;
-        weth = WETH(_weth);
-
+        weth = _weth;
     }
 
     function bid(uint _amount) notSeller external {
@@ -68,7 +68,7 @@ contract NFTSell {
 
         bool sentETH = weth.transferFrom(bidder, seller, amount);
         require(sentETH, "failed to transfer weth");
-        nft.transferFrom(seller, bidder, nftId);
+        nft.safeTransferFrom(seller, bidder, nftId);
 
         isSold = true;
         emit Sold(bidder, SellType.AcceptBid, amount);
