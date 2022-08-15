@@ -6,7 +6,7 @@ import { WETH } from "../src/WETH.sol";
 
 contract NFTSell {
     event NewBid (address indexed bidder, uint indexed amount);
-    event Sold (address buyer, SellType);
+    event Sold (address buyer, SellType, uint amount);
 
     enum SellType {
         AcceptBid,
@@ -28,8 +28,8 @@ contract NFTSell {
     }
 
     WETH public weth;
-    IERC721 public nft;
-    uint public nftId;
+    IERC721 public immutable nft;
+    uint public immutable nftId;
     uint public instantBuyPrice;
     Bid[] public bids;
     address payable seller;
@@ -46,14 +46,18 @@ contract NFTSell {
         seller = payable(msg.sender);
         instantBuyPrice = _instantBuyPrice;
         weth = WETH(_weth);
+
     }
 
     function bid(uint _amount) notSeller external {
+        require(!isSold, "nft already sold");
+        uint allowance = weth.allowance(msg.sender, address(this));
+        require(allowance == _amount, "weth not allowed");
+
         bids.push(Bid(
             msg.sender,
             _amount
         ));
-        weth.approve(address(this), _amount);
 
         emit NewBid(msg.sender, _amount);
     }
@@ -62,30 +66,30 @@ contract NFTSell {
         uint amount = bids[index].amount;
         address bidder = bids[index].bidder;
 
-        bool sent = weth.transferFrom(bidder, address(this), amount);
-        require(sent, "failed to transfer weth");
+        bool sentETH = weth.transferFrom(bidder, seller, amount);
+        require(sentETH, "failed to transfer weth");
+        nft.transferFrom(seller, bidder, nftId);
 
         isSold = true;
-        
-        emit Sold(bidder, SellType.AcceptBid);
+        emit Sold(bidder, SellType.AcceptBid, amount);
     }
 
     function instantBuy() notSeller external {
-        weth.approve(address(this), instantBuyPrice);
+        require(!isSold, "nft already sold");
+        uint allowance = weth.allowance(msg.sender, address(this));
+        require(allowance == instantBuyPrice, "weth not allowed");
 
-        bool sent = weth.transferFrom(msg.sender, address(this), instantBuyPrice);
-        require(sent, "failed to transfer weth");
+        bool sentETH = weth.transferFrom(msg.sender, seller, instantBuyPrice);
+        require(sentETH, "failed to transfer weth");
+        nft.safeTransferFrom(seller, msg.sender, nftId);
 
         isSold = true;
-
-        emit Sold(msg.sender, SellType.InstantBuy);
+        emit Sold(msg.sender, SellType.InstantBuy, instantBuyPrice);
     }
 
-    function withdraw() onlySeller external {
-        require(isSold, "nft not yet sold");
-        require(address(this).balance > 0, "balance is 0");
+    function getBid(uint index) public view returns (address bidder, uint amount) {
+        return (bids[index].bidder, bids[index].amount);
     }
-
     
 }
 
